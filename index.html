@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Resume Extractor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;1,9..144,300&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #F7F5F0; --surface: #fff; --surface2: #F0EDE6;
+    --border: #DDD9D0; --border2: #C8C4BA;
+    --text: #1A1916; --text2: #6B6760; --text3: #9E9B96;
+    --accent: #2A5C45; --accent-l: #E8F2ED; --accent-b: #A8CBBA;
+    --danger: #8B2A2A; --danger-l: #FDF0F0;
+    --r: 10px; --rs: 6px;
+  }
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'DM Mono', monospace; font-size: 13px; line-height: 1.6; }
+  .page { min-height: 100vh; display: flex; flex-direction: column; }
+  header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 14px 28px; display: flex; align-items: baseline; gap: 14px; }
+  header h1 { font-family: 'Fraunces', serif; font-size: 24px; font-weight: 300; font-style: italic; }
+  header span { font-size: 11px; color: var(--text3); letter-spacing: 0.05em; }
+  .body { flex: 1; display: grid; grid-template-columns: 290px 1fr; }
+  .sidebar { background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 20px; gap: 16px; overflow-y: auto; }
+  .content { overflow-y: auto; padding: 24px 30px; display: flex; flex-direction: column; gap: 16px; }
+  .sec-label { font-size: 10px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text3); margin-bottom: 6px; }
+  #drop-zone { border: 1.5px dashed var(--border2); border-radius: var(--r); padding: 24px 14px; text-align: center; cursor: pointer; background: var(--bg); transition: background .12s, border-color .12s; }
+  #drop-zone:hover, #drop-zone.over { background: var(--accent-l); border-color: var(--accent-b); }
+  #drop-zone svg { color: var(--text3); margin-bottom: 8px; }
+  #drop-zone .dt { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
+  #drop-zone .ds { font-size: 11px; color: var(--text3); }
+  #file-input { display: none; }
+  .file-list { display: flex; flex-direction: column; gap: 5px; }
+  .file-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--rs); font-size: 11px; }
+  .file-item .fn { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip { font-size: 10px; padding: 2px 7px; border-radius: 20px; font-weight: 500; white-space: nowrap; }
+  .chip.pending  { background: var(--surface2); color: var(--text3); }
+  .chip.working  { background: #E8F2ED; color: #1A5C38; }
+  .chip.done     { background: #E8F2ED; color: #1A5C38; border: 1px solid #A8CBBA; }
+  .chip.error    { background: var(--danger-l); color: var(--danger); }
+  .rm { background: none; border: none; cursor: pointer; color: var(--text3); font-size: 15px; line-height: 1; padding: 0 2px; }
+  .rm:hover { color: var(--text); }
+  .pbar-track { height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; margin-bottom: 5px; }
+  .pbar-fill { height: 100%; background: var(--accent); border-radius: 2px; width: 0%; transition: width .3s ease; }
+  .pstatus { font-size: 11px; color: var(--text3); }
+  .btn-primary { width: 100%; padding: 10px; background: var(--accent); color: #fff; border: none; border-radius: var(--rs); font-family: 'DM Mono', monospace; font-size: 12px; font-weight: 500; cursor: pointer; transition: opacity .12s; margin-top: auto; }
+  .btn-primary:disabled { opacity: .35; cursor: not-allowed; }
+  .btn-primary:not(:disabled):hover { opacity: .85; }
+  .btn-ghost { padding: 7px 12px; background: none; border: 1px solid var(--border); border-radius: var(--rs); font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text2); cursor: pointer; flex: 1; text-align: center; }
+  .btn-ghost:hover { background: var(--surface2); }
+  .btn-sec { padding: 7px 14px; background: var(--surface); border: 1px solid var(--border2); border-radius: var(--rs); font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  .btn-sec:hover { background: var(--surface2); }
+  .btn-sec:disabled { opacity: .35; cursor: not-allowed; }
+  .results-hdr { display: flex; align-items: center; justify-content: space-between; }
+  .results-title { font-family: 'Fraunces', serif; font-size: 20px; font-weight: 300; font-style: italic; }
+  .results-meta { font-size: 11px; color: var(--text3); }
+  .dl-row { display: flex; gap: 8px; }
+  .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); overflow: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 700px; }
+  thead th { background: var(--surface2); color: var(--text3); font-size: 10px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; text-align: left; padding: 10px 13px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  tbody tr { border-bottom: 1px solid var(--border); }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover td { background: var(--bg); }
+  tbody td { padding: 8px 13px; color: var(--text); vertical-align: middle; }
+  td.empty { color: var(--text3); font-style: italic; }
+  .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 40px; text-align: center; color: var(--text3); gap: 10px; }
+  .empty-state p { font-size: 13px; max-width: 300px; line-height: 1.6; }
+  .spin { width: 12px; height: 12px; border: 1.5px solid var(--border2); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; flex-shrink: 0; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .sidebar-actions { display: flex; gap: 6px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1>Resume Extractor</h1>
+    <span>PDF → Excel</span>
+  </header>
+  <div class="body">
+    <div class="sidebar">
+      <div>
+        <div class="sec-label">Resumes</div>
+        <div id="drop-zone">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M8 12l4-4m0 0l4 4m-4-4v8"/></svg>
+          <div class="dt">Drop PDF files here</div>
+          <div class="ds">or click to browse</div>
+          <input type="file" id="file-input" accept=".pdf" multiple>
+        </div>
+      </div>
+      <div class="file-list" id="file-list"></div>
+      <div class="sidebar-actions" id="sidebar-actions" style="display:none">
+        <button class="btn-ghost" id="remove-btn">Remove selected</button>
+        <button class="btn-ghost" id="clear-btn">Clear all</button>
+      </div>
+      <div id="progress-wrap" style="display:none">
+        <div class="sec-label">Progress</div>
+        <div class="pbar-track"><div class="pbar-fill" id="pbar"></div></div>
+        <div class="pstatus" id="pstatus"></div>
+      </div>
+      <button class="btn-primary" id="extract-btn" disabled>Extract data →</button>
+    </div>
+    <div class="content">
+      <div id="empty-state" class="empty-state">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        <p>Add PDF resumes on the left and click Extract data.</p>
+      </div>
+      <div id="results-section" style="display:none; flex-direction:column; gap:14px;">
+        <div class="results-hdr">
+          <span class="results-title">Extracted data</span>
+          <span class="results-meta" id="results-meta"></span>
+        </div>
+        <div class="dl-row">
+          <button class="btn-sec" id="dl-excel" disabled>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M8 12l4 4m0 0l4-4m0 4V4"/></svg>
+            Download Excel
+          </button>
+          <button class="btn-sec" id="dl-csv" disabled>Download CSV</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>School</th><th>First Name</th><th>Last Name</th>
+              <th>Phone</th><th>Email</th><th>Graduation</th><th>Degree / Title</th>
+            </tr></thead>
+            <tbody id="results-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const API_KEY = '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';
+
+let files = [], results = [];
+
+const dropZone       = document.getElementById('drop-zone');
+const fileInput      = document.getElementById('file-input');
+const fileListEl     = document.getElementById('file-list');
+const sidebarActs    = document.getElementById('sidebar-actions');
+const removeBtn      = document.getElementById('remove-btn');
+const clearBtn       = document.getElementById('clear-btn');
+const progressWrap   = document.getElementById('progress-wrap');
+const pbar           = document.getElementById('pbar');
+const pstatus        = document.getElementById('pstatus');
+const extractBtn     = document.getElementById('extract-btn');
+const emptyState     = document.getElementById('empty-state');
+const resultsSection = document.getElementById('results-section');
+const resultsMeta    = document.getElementById('results-meta');
+const resultsBody    = document.getElementById('results-body');
+const dlExcel        = document.getElementById('dl-excel');
+const dlCsv          = document.getElementById('dl-csv');
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('over');
+  addFiles([...e.dataTransfer.files].filter(f => f.type === 'application/pdf'));
+});
+fileInput.addEventListener('change', () => { addFiles([...fileInput.files]); fileInput.value = ''; });
+
+function addFiles(newFiles) {
+  newFiles.forEach(f => {
+    if (!files.find(e => e.file.name === f.name && e.file.size === f.size))
+      files.push({ file: f, status: 'pending' });
+  });
+  renderList();
+}
+
+function renderList() {
+  fileListEl.innerHTML = '';
+  files.forEach((entry, i) => {
+    const div = document.createElement('div');
+    div.className = 'file-item';
+    const icon = entry.status === 'working'
+      ? `<span class="spin"></span>`
+      : `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>`;
+    const labels = { pending:'Pending', working:'Working', done:'Done', error:'Error' };
+    div.innerHTML = `${icon}<span class="fn" title="${entry.file.name}">${entry.file.name}</span><span class="chip ${entry.status}">${labels[entry.status]}</span><button class="rm" data-i="${i}">×</button>`;
+    fileListEl.appendChild(div);
+  });
+  fileListEl.querySelectorAll('.rm').forEach(b => b.addEventListener('click', () => {
+    files.splice(+b.dataset.i, 1); renderList(); refresh();
+  }));
+  refresh();
+}
+
+function refresh() {
+  const has = files.length > 0;
+  extractBtn.disabled = !has;
+  sidebarActs.style.display = has ? 'flex' : 'none';
+}
+
+removeBtn.addEventListener('click', () => { files = files.filter(f => f.status !== 'pending'); renderList(); });
+clearBtn.addEventListener('click', () => {
+  files = []; results = []; renderList();
+  resultsSection.style.display = 'none';
+  emptyState.style.display = '';
+  progressWrap.style.display = 'none';
+  pbar.style.width = '0%';
+});
+
+async function pdfToText(file) {
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  let text = '';
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    text += content.items.map(s => s.str).join(' ') + '\n';
+  }
+  return text;
+}
+
+async function callClaude(text) {
+  const prompt = `Extract information from this resume and return ONLY a raw JSON object, no markdown, no backticks, no explanation.
+
+{
+  "school": "",
+  "firstName": "",
+  "lastName": "",
+  "phone": "",
+  "email": "",
+  "graduation": "",
+  "degreeOrTitle": ""
+}
+
+Rules — read carefully:
+- school: full name of university or college. If NO school is found anywhere in the resume, put "N/A"
+- firstName: first name only
+- lastName: last name and any suffix (e.g. "Medina, Esq." → lastName = "Medina Esq.")
+- phone: as written
+- email: as written
+- graduation: month abbreviation + 2-digit year, e.g. "May 26", "Aug 20", "Dec 07". Just the date, nothing else. If unknown leave blank.
+- degreeOrTitle: IF a school was found, put the most recent or highest degree e.g. "Juris Doctor", "B.A., Political Science", "MBA". IF no school was found (school = "N/A"), put the person's most recent job title instead e.g. "Associate Attorney", "Marketing Manager"
+
+Resume text:
+${text.slice(0, 8000)}`;
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': API_KEY,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-calls': 'true'
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 500,
+      messages: [{ role: 'user', content: prompt }]
+    })
+  });
+
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message);
+  const raw = data.content.map(b => b.text || '').join('').replace(/```json|```/g, '').trim();
+  const match = raw.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error('No JSON in response');
+  return JSON.parse(match[0]);
+}
+
+extractBtn.addEventListener('click', async () => {
+  const pending = files.filter(f => f.status === 'pending');
+  if (!pending.length) return;
+
+  extractBtn.disabled = true;
+  progressWrap.style.display = '';
+  emptyState.style.display = 'none';
+
+  let done = 0;
+  for (const entry of pending) {
+    entry.status = 'working'; renderList();
+    pstatus.textContent = `Processing ${entry.file.name} (${done + 1} of ${pending.length})…`;
+    pbar.style.width = `${Math.round(done / pending.length * 100)}%`;
+    try {
+      const text = await pdfToText(entry.file);
+      const parsed = await callClaude(text);
+      entry.status = 'done';
+      results.push(parsed);
+      addRow(parsed);
+      resultsSection.style.display = 'flex';
+      resultsMeta.textContent = `${results.length} record${results.length !== 1 ? 's' : ''}`;
+      dlExcel.disabled = false;
+      dlCsv.disabled = false;
+    } catch(e) {
+      entry.status = 'error';
+      console.error(e);
+    }
+    done++; renderList();
+  }
+
+  pbar.style.width = '100%';
+  pstatus.textContent = `Done — ${results.length} of ${pending.length} extracted.`;
+  extractBtn.disabled = false;
+});
+
+function addRow(r) {
+  const tr = document.createElement('tr');
+  const fields = [r.school, r.firstName, r.lastName, r.phone, r.email, r.graduation, r.degreeOrTitle];
+  tr.innerHTML = fields.map(v => v ? `<td>${v}</td>` : `<td class="empty">—</td>`).join('');
+  resultsBody.appendChild(tr);
+}
+
+dlExcel.addEventListener('click', () => {
+  const headers = ['School','First Name','Last Name','Phone','Email','Graduation','Degree / Title'];
+  const keys    = ['school','firstName','lastName','phone','email','graduation','degreeOrTitle'];
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...results.map(r => keys.map(k => r[k] || ''))]);
+  ws['!cols'] = [30,14,16,18,32,12,30].map(w => ({ wch: w }));
+  for (let c = 0; c < headers.length; c++) {
+    const ref = XLSX.utils.encode_cell({ r: 0, c });
+    if (ws[ref]) ws[ref].s = { font: { bold: true, name: 'Arial', sz: 10 }, fill: { patternType: 'solid', fgColor: { rgb: 'E2EFE8' } }, alignment: { horizontal: 'left' } };
+  }
+  XLSX.utils.book_append_sheet(wb, ws, 'Resume Data');
+  XLSX.writeFile(wb, 'resume_data.xlsx');
+});
+
+dlCsv.addEventListener('click', () => {
+  const headers = ['School','First Name','Last Name','Phone','Email','Graduation','Degree / Title'];
+  const keys    = ['school','firstName','lastName','phone','email','graduation','degreeOrTitle'];
+  const csv = [headers, ...results.map(r => keys.map(k => r[k] || ''))].map(row =>
+    row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')
+  ).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = 'resume_data.csv';
+  a.click();
+});
+</script>
+</body>
+</html>
